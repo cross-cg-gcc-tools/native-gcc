@@ -1,0 +1,104 @@
+name: Build native GCC
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [
+          #{ name: "arm64", url: "http://ftp.debian.org/debian/" },
+          #{ name: "armel", url: "http://ftp.debian.org/debian/" },
+          { name: "m68k", qemu: "qemu-m68k-static", url: "http://ftp.ports.debian.org/debian-ports" },
+        ]
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install debootstrap qemu-system qemu-user-static
+
+      - name: Generate Debian qemu image
+        run: |
+          dd if=/dev/zero of=debian.img bs=1M count=15360
+          mkfs.ext4 debian.img -L root
+          mkdir debian-root
+          sudo mount debian.img debian-root
+          sudo debootstrap --no-check-gpg --arch=${{ matrix.arch.name }} --foreign unstable debian-root ${{ matrix.arch.url }}
+          sudo cp $(which ${{ matrix.arch.qemu }}) debian-root/usr/bin/
+          sudo umount debian.img
+
+      - name: Install packages in the VM
+        run: |
+          sudo mount debian.img debian-root
+
+          # TODO: check if all these packages are necessary.
+          sudo chroot debian-root/ ${{ matrix.arch.qemu }} /bin/sh -c '/usr/bin/apt-get install -y gcc g++ make libgmp-dev libmpfr-dev libmpc3 libmpc-dev flex'
+
+      - name: Clone gcc fork and apply patches
+        run: |
+          sudo mkdir -p debian-root/home/user
+          sudo git clone --depth 50 https://github.com/rust-lang/gcc debian-root/home/user/gcc
+
+          root_dir=$(pwd)
+          cd debian-root/home/user/gcc
+          if [ -d $root_dir/${{ matrix.arch.name }} ]; then
+              for file in $(ls $root_dir/${{ matrix.arch.name }}); do
+                  sudo patch -p1 < $root_dir/${{ matrix.arch.name }}/$file
+              done
+          fi
+
+          # TODO: check if this cd is needed.
+          cd $root_dir
+
+      - name: Build libgccjit
+        run: |
+          sudo mkdir -p debian-root/home/user/gcc-build/build
+          sudo chroot debian-root/ ${{ matrix.arch.qemu }} /bin/sh -c 'cd /home/user/gcc-build/build && ../../gcc/configure --enable-host-shared --disable-bootstrap --enable-languages=c,jit,lto --enable-checking=yes --prefix=/usr --disable-multilib --enable-multiarch'
+          sudo chroot debian-root/ ${{ matrix.arch.qemu }} /bin/sh -c 'cd /home/user/gcc-build/build && make -j4'
+          sudo chroot debian-root/ ${{ matrix.arch.qemu }} /bin/sh -c 'cd /home/user/gcc-build/build && make install DESTDIR=$(pwd)/../install'
+
+      #- name: Build Debian package
+        #run: |
+          #cd /home/user/gcc-build
+          #mkdir install/DEBIAN
+          #cat > install/DEBIAN/control << EOF
+          #Package: gcc-15
+          #Version: 15
+          #Architecture: ${{ matrix.arch.name }}
+          #Maintainer: Antoni Boucher <bouanto@zoho.com>
+          #Description: gcc 15 for rustc_codegen_gcc CI
+          #EOF
+          #dpkg-deb --root-owner-group --build install
+          #mv install.deb gcc-15.deb
+
+      - name: Compute tag name
+        id: tag_name
+        run: |
+          git_hash=$(git rev-parse "$GITHUB_SHA")
+          echo "TAG_NAME=$git_hash" >> $GITHUB_OUTPUT
+
+      - name: Create tag
+        if: github.ref == 'refs/heads/master'
+        continue-on-error: true
+        uses: laputansoft/github-tag-action@v4.6
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          create_annotated_tag: true
+          tag: master-${{ steps.tag_name.outputs.TAG_NAME }}
+
+      - name: Create release
+        if: github.ref == 'refs/heads/master'
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: /home/runner/work/gcc/install/usr/lib/libgccjit.so.0.0.1
+          asset_name: libgccjit-${{ matrix.arch.name }}.so
+          tag: master-${{ steps.tag_name.outputs.TAG_NAME }}

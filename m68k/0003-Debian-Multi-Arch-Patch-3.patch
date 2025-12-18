@@ -1,0 +1,132 @@
+From 155a2ce979a9e424aca9b9e83323edf0ae3dc961 Mon Sep 17 00:00:00 2001
+From: John Paul Adrian Glaubitz <glaubitz@physik.fu-berlin.de>
+Date: Mon, 2 Sep 2024 19:37:58 +0200
+Subject: [PATCH 03/11] Debian Multi-Arch Patch #3
+
+---
+ gcc/Makefile.in                  | 11 ++++++++++-
+ gcc/cppdefault.cc                |  2 ++
+ gcc/incpath.cc                   | 23 ++++++++++++++++++++++-
+ libstdc++-v3/include/Makefile.am |  2 +-
+ libstdc++-v3/include/Makefile.in |  2 +-
+ 5 files changed, 36 insertions(+), 4 deletions(-)
+
+diff --git a/gcc/Makefile.in b/gcc/Makefile.in
+index 2a1bd5e40fc..9cdd876c581 100644
+--- a/gcc/Makefile.in
++++ b/gcc/Makefile.in
+@@ -1254,6 +1254,7 @@ FLAGS_TO_PASS = \
+ 	"prefix=$(prefix)" \
+ 	"local_prefix=$(local_prefix)" \
+ 	"gxx_include_dir=$(gcc_gxx_include_dir)" \
++	"gxx_tool_include_dir=$(gcc_gxx_tool_include_dir)" \
+ 	"gxx_libcxx_include_dir=$(gcc_gxx_libcxx_include_dir)" \
+ 	"build_tooldir=$(build_tooldir)" \
+ 	"gcc_tooldir=$(gcc_tooldir)" \
+@@ -1967,6 +1968,14 @@ gnat_install_lib = @gnat_install_lib@
+ # host overrides
+ -include $(xmake_file)
+ 
++# Directory in which the compiler finds target-dependent g++ includes.
++ifneq ($(call if_multiarch,non-empty),)
++  gcc_gxx_tool_include_dir = $(libsubdir)/$(libsubdir_to_prefix)include/$(MULTIARCH_DIRNAME)/c++/$(version)
++else
++  gcc_gxx_tool_include_dir = $(gcc_gxx_include_dir)/$(target_noncanonical)
++endif
++
++
+ # all-tree.def includes all the tree.def files.
+ all-tree.def: s-alltree; @true
+ s-alltree: Makefile
+@@ -3212,7 +3221,7 @@ PREPROCESSOR_DEFINES = \
+   -DFIXED_INCLUDE_DIR=\"$(libsubdir)/include-fixed\" \
+   -DGPLUSPLUS_INCLUDE_DIR=\"$(gcc_gxx_include_dir)\" \
+   -DGPLUSPLUS_INCLUDE_DIR_ADD_SYSROOT=$(gcc_gxx_include_dir_add_sysroot) \
+-  -DGPLUSPLUS_TOOL_INCLUDE_DIR=\"$(gcc_gxx_include_dir)/$(target_noncanonical)\" \
++  -DGPLUSPLUS_TOOL_INCLUDE_DIR=\"$(gcc_gxx_tool_include_dir)\" \
+   -DGPLUSPLUS_BACKWARD_INCLUDE_DIR=\"$(gcc_gxx_include_dir)/backward\" \
+   -DGPLUSPLUS_LIBCXX_INCLUDE_DIR=\"$(gcc_gxx_libcxx_include_dir)\" \
+   -DGPLUSPLUS_LIBCXX_INCLUDE_DIR_ADD_SYSROOT=$(gcc_gxx_libcxx_include_dir_add_sysroot) \
+diff --git a/gcc/cppdefault.cc b/gcc/cppdefault.cc
+index f82b4badad7..ab1e8c170e7 100644
+--- a/gcc/cppdefault.cc
++++ b/gcc/cppdefault.cc
+@@ -49,6 +49,8 @@ const struct default_include cpp_include_defaults[]
+     /* Pick up GNU C++ target-dependent include files.  */
+     { GPLUSPLUS_TOOL_INCLUDE_DIR, "G++", 1, 1,
+       GPLUSPLUS_INCLUDE_DIR_ADD_SYSROOT, 1 },
++    { GPLUSPLUS_INCLUDE_DIR, "G++", 1, 1,
++      GPLUSPLUS_INCLUDE_DIR_ADD_SYSROOT, 2 },
+ #endif
+ #ifdef GPLUSPLUS_BACKWARD_INCLUDE_DIR
+     /* Pick up GNU C++ backward and deprecated include files.  */
+diff --git a/gcc/incpath.cc b/gcc/incpath.cc
+index 64cdd2f4a1b..db03cad652c 100644
+--- a/gcc/incpath.cc
++++ b/gcc/incpath.cc
+@@ -164,6 +164,18 @@ add_standard_paths (const char *sysroot, const char *iprefix,
+ 			}
+ 		      str = reconcat (str, str, dir_separator_str,
+ 				      imultiarch, NULL);
++		      if (p->cplusplus && strstr (str, "/c++/"))
++			{
++			  char *suffix = strstr (str, "/c++/");
++			  *suffix++ = '\0';
++			  suffix = xstrdup (suffix);
++			  str = reconcat (str, str, dir_separator_str,
++					  imultiarch,
++					  dir_separator_str, suffix, NULL);
++			}
++		      else
++			str = reconcat (str, str, dir_separator_str,
++					imultiarch, NULL);
+ 		    }
+ 		  add_path (str, INC_SYSTEM, p->cxx_aware, false);
+ 		}
+@@ -229,7 +241,16 @@ add_standard_paths (const char *sysroot, const char *iprefix,
+ 		  free (str);
+ 		  continue;
+ 		}
+-	      str = reconcat (str, str, dir_separator_str, imultiarch, NULL);
++	      if (p->cplusplus && strstr (str, "/c++/"))
++		{
++		  char *suffix = strstr (str, "/c++/");
++		  *suffix++ = '\0';
++		  suffix = xstrdup (suffix);
++		  str = reconcat (str, str, dir_separator_str, imultiarch,
++				  dir_separator_str, suffix, NULL);
++		}
++	      else
++		str = reconcat (str, str, dir_separator_str, imultiarch, NULL);
+ 	    }
+ 
+ 	  add_path (str, INC_SYSTEM, p->cxx_aware, false);
+diff --git a/libstdc++-v3/include/Makefile.am b/libstdc++-v3/include/Makefile.am
+index 422a0f4bd0a..e01828aff27 100644
+--- a/libstdc++-v3/include/Makefile.am
++++ b/libstdc++-v3/include/Makefile.am
+@@ -1041,7 +1041,7 @@ endif
+ 
+ host_srcdir = ${glibcxx_srcdir}/$(OS_INC_SRCDIR)
+ host_builddir = ./${host_alias}/bits
+-host_installdir = ${gxx_include_dir}/${host_alias}$(MULTISUBDIR)/bits
++host_installdir = $(if $(shell $(CC) -print-multiarch),/usr/include/$(shell $(filter-out -m%,$(CC)) -print-multiarch)/c++/$(notdir ${gxx_include_dir})$(MULTISUBDIR)/bits,${gxx_include_dir}/${default_host_alias}$(MULTISUBDIR)/bits)
+ host_headers = \
+ 	${host_srcdir}/ctype_base.h \
+ 	${host_srcdir}/ctype_inline.h \
+diff --git a/libstdc++-v3/include/Makefile.in b/libstdc++-v3/include/Makefile.in
+index 9fd4ab4848c..7beef98222e 100644
+--- a/libstdc++-v3/include/Makefile.in
++++ b/libstdc++-v3/include/Makefile.in
+@@ -1372,7 +1372,7 @@ parallel_headers = \
+ @GLIBCXX_C_HEADERS_COMPATIBILITY_TRUE@c_compatibility_headers_extra = ${c_compatibility_headers}
+ host_srcdir = ${glibcxx_srcdir}/$(OS_INC_SRCDIR)
+ host_builddir = ./${host_alias}/bits
+-host_installdir = ${gxx_include_dir}/${host_alias}$(MULTISUBDIR)/bits
++host_installdir = $(if $(shell $(CC) -print-multiarch),/usr/include/$(shell $(filter-out -m%,$(CC)) -print-multiarch)/c++/$(notdir ${gxx_include_dir})$(MULTISUBDIR)/bits,${gxx_include_dir}/${default_host_alias}$(MULTISUBDIR)/bits)
+ host_headers = \
+ 	${host_srcdir}/ctype_base.h \
+ 	${host_srcdir}/ctype_inline.h \
+-- 
+2.45.2
+

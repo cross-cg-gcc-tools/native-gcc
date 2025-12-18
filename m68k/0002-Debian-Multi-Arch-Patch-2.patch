@@ -1,0 +1,127 @@
+From bfd980a7a328322982a1d51e667672921a3d3f36 Mon Sep 17 00:00:00 2001
+From: John Paul Adrian Glaubitz <glaubitz@physik.fu-berlin.de>
+Date: Mon, 2 Sep 2024 19:37:33 +0200
+Subject: [PATCH 02/11] Debian Multi-Arch Patch #2
+
+---
+ gcc/config/i386/t-linux64    | 12 +++++++++++-
+ gcc/config/loongarch/t-linux |  6 +++---
+ gcc/config/rs6000/t-linux    |  2 +-
+ gcc/config/rs6000/t-linux64  |  7 ++++++-
+ gcc/config/s390/t-linux64    |  7 ++++++-
+ gcc/config/sparc/t-linux64   |  7 ++++++-
+ 6 files changed, 33 insertions(+), 8 deletions(-)
+
+diff --git a/gcc/config/i386/t-linux64 b/gcc/config/i386/t-linux64
+index 8dbd1d792da..75f8c5a26db 100644
+--- a/gcc/config/i386/t-linux64
++++ b/gcc/config/i386/t-linux64
+@@ -33,9 +33,19 @@
+ comma=,
+ MULTILIB_OPTIONS    = $(subst $(comma),/,$(TM_MULTILIB_CONFIG))
+ MULTILIB_DIRNAMES   = $(patsubst m%, %, $(subst /, ,$(MULTILIB_OPTIONS)))
++ifneq (,$(findstring gnux32,$(target)))
+ MULTILIB_OSDIRNAMES = m64=../lib64$(call if_multiarch,:x86_64-linux-gnu)
+-MULTILIB_OSDIRNAMES+= m32=$(if $(wildcard $(shell echo $(SYSTEM_HEADER_DIR))/../../usr/lib32),../lib32,../lib)$(call if_multiarch,:i386-linux-gnu)
++MULTILIB_OSDIRNAMES+= m32=../lib32$(call if_multiarch,:i386-linux-gnu)
++MULTILIB_OSDIRNAMES+= mx32=../lib$(call if_multiarch,:x86_64-linux-gnux32)
++else ifneq (,$(findstring x86_64,$(target)))
++MULTILIB_OSDIRNAMES = m64=../lib$(call if_multiarch,:x86_64-linux-gnu)
++MULTILIB_OSDIRNAMES+= m32=../lib32$(call if_multiarch,:i386-linux-gnu)
+ MULTILIB_OSDIRNAMES+= mx32=../libx32$(call if_multiarch,:x86_64-linux-gnux32)
++else
++MULTILIB_OSDIRNAMES = m64=../lib64$(call if_multiarch,:x86_64-linux-gnu)
++MULTILIB_OSDIRNAMES+= m32=../lib$(call if_multiarch,:i386-linux-gnu)
++MULTILIB_OSDIRNAMES+= mx32=../libx32$(call if_multiarch,:x86_64-linux-gnux32)
++endif
+ 
+ ifneq (,$(findstring x86_64,$(target)))
+   ifneq (,$(findstring biarchx32.h,$(tm_include_list)))
+diff --git a/gcc/config/loongarch/t-linux b/gcc/config/loongarch/t-linux
+index 23e1fb97934..4475600ad9b 100644
+--- a/gcc/config/loongarch/t-linux
++++ b/gcc/config/loongarch/t-linux
+@@ -16,9 +16,9 @@
+ # along with GCC; see the file COPYING3.  If not see
+ # <http://www.gnu.org/licenses/>.
+ 
+-MULTIOSDIR_lp64d := ../lib64$(call if_multiarch,:loongarch64-linux-gnu)
+-MULTIOSDIR_lp64f := ../lib64/f32$(call if_multiarch,:loongarch64-linux-gnuf32)
+-MULTIOSDIR_lp64s := ../lib64/sf$(call if_multiarch,:loongarch64-linux-gnusf)
++MULTIOSDIR_lp64d := ../lib$(call if_multiarch,:loongarch64-linux-gnu)
++MULTIOSDIR_lp64f := ../lib/f32$(call if_multiarch,:loongarch64-linux-gnuf32)
++MULTIOSDIR_lp64s := ../lib/sf$(call if_multiarch,:loongarch64-linux-gnusf)
+ 
+ # Don't define MULTILIB_OSDIRNAMES if multilib is disabled.
+ ifeq ($(filter LA_DISABLE_MULTILIB,$(tm_defines)),)
+diff --git a/gcc/config/rs6000/t-linux b/gcc/config/rs6000/t-linux
+index 4e371255533..dc0abeed812 100644
+--- a/gcc/config/rs6000/t-linux
++++ b/gcc/config/rs6000/t-linux
+@@ -2,7 +2,7 @@
+ # or soft-float.
+ ifeq (,$(filter $(with_cpu),$(SOFT_FLOAT_CPUS))$(findstring soft,$(with_float)))
+ ifneq (,$(findstring powerpc64,$(target)))
+-MULTILIB_OSDIRNAMES := .=../lib64$(call if_multiarch,:powerpc64-linux-gnu)
++MULTILIB_OSDIRNAMES := .=../lib$(call if_multiarch,:powerpc64-linux-gnu)
+ else
+ MULTIARCH_DIRNAME := $(call if_multiarch,powerpc-linux-gnu)
+ endif
+diff --git a/gcc/config/rs6000/t-linux64 b/gcc/config/rs6000/t-linux64
+index 2c1a5030596..790b32e7d5e 100644
+--- a/gcc/config/rs6000/t-linux64
++++ b/gcc/config/rs6000/t-linux64
+@@ -28,8 +28,13 @@
+ MULTILIB_OPTIONS    := m64/m32
+ MULTILIB_DIRNAMES   := 64 32
+ MULTILIB_EXTRA_OPTS := 
++ifneq (,$(findstring powerpc64,$(target)))
++MULTILIB_OSDIRNAMES := m64=../lib$(call if_multiarch,:powerpc64-linux-gnu)
++MULTILIB_OSDIRNAMES += m32=../lib32$(call if_multiarch,:powerpc-linux-gnu)
++else
+ MULTILIB_OSDIRNAMES := m64=../lib64$(call if_multiarch,:powerpc64-linux-gnu)
+-MULTILIB_OSDIRNAMES += m32=$(if $(wildcard $(shell echo $(SYSTEM_HEADER_DIR))/../../usr/lib32),../lib32,../lib)$(call if_multiarch,:powerpc-linux-gnu)
++MULTILIB_OSDIRNAMES += m32=../lib$(call if_multiarch,:powerpc-linux-gnu)
++endif
+ 
+ MULTIARCH_DIRNAME = $(call if_multiarch,powerpc$(if $(findstring 64,$(target)),64)-linux-gnu)
+ 
+diff --git a/gcc/config/s390/t-linux64 b/gcc/config/s390/t-linux64
+index d4216dc2ece..a45991093a7 100644
+--- a/gcc/config/s390/t-linux64
++++ b/gcc/config/s390/t-linux64
+@@ -7,7 +7,12 @@
+ 
+ MULTILIB_OPTIONS = m64/m31
+ MULTILIB_DIRNAMES = 64 32
++ifneq (,$(findstring s390x,$(target)))
++MULTILIB_OSDIRNAMES = ../lib$(call if_multiarch,:s390x-linux-gnu)
++MULTILIB_OSDIRNAMES += ../lib32$(call if_multiarch,:s390-linux-gnu)
++else
+ MULTILIB_OSDIRNAMES = ../lib64$(call if_multiarch,:s390x-linux-gnu)
+-MULTILIB_OSDIRNAMES += $(if $(wildcard $(shell echo $(SYSTEM_HEADER_DIR))/../../usr/lib32),../lib32,../lib)$(call if_multiarch,:s390-linux-gnu)
++MULTILIB_OSDIRNAMES += ../lib$(call if_multiarch,:s390-linux-gnu)
++endif
+ 
+ MULTIARCH_DIRNAME = $(call if_multiarch,s390$(if $(findstring s390x,$(target)),x)-linux-gnu)
+diff --git a/gcc/config/sparc/t-linux64 b/gcc/config/sparc/t-linux64
+index bad77fea9d7..47bb83865d7 100644
+--- a/gcc/config/sparc/t-linux64
++++ b/gcc/config/sparc/t-linux64
+@@ -25,7 +25,12 @@
+ 
+ MULTILIB_OPTIONS = m64/m32
+ MULTILIB_DIRNAMES = 64 32
++ifneq (,$(findstring sparc64,$(target)))
++MULTILIB_OSDIRNAMES = ../lib$(call if_multiarch,:sparc64-linux-gnu)
++MULTILIB_OSDIRNAMES += ../lib32$(call if_multiarch,:sparc-linux-gnu)
++else
+ MULTILIB_OSDIRNAMES = ../lib64$(call if_multiarch,:sparc64-linux-gnu)
+-MULTILIB_OSDIRNAMES += $(if $(wildcard $(shell echo $(SYSTEM_HEADER_DIR))/../../usr/lib32),../lib32,../lib)$(call if_multiarch,:sparc-linux-gnu)
++MULTILIB_OSDIRNAMES += ../lib$(call if_multiarch,:sparc-linux-gnu)
++endif
+ 
+ MULTIARCH_DIRNAME = $(call if_multiarch,sparc$(if $(findstring 64,$(target)),64)-linux-gnu)
+-- 
+2.45.2
+
