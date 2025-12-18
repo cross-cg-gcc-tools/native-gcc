@@ -102,6 +102,6 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: /home/runner/work/gcc/install/usr/lib/libgccjit.so.0.0.1
+          file: /home/runner/gcc-build/install/usr/lib/libgccjit.so.0.0.1
           asset_name: libgccjit-${{ matrix.arch.name }}.so
           tag: master-${{ steps.tag_name.outputs.TAG_NAME }}
