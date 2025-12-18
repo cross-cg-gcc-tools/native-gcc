@@ -1,5 +1,8 @@
 name: Build native GCC
 
+permissions:
+  contents: write
+
 on:
   push:
   pull_request:
