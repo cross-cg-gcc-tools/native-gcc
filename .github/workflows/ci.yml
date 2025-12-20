@@ -65,7 +65,7 @@ jobs:
         run: |
           sudo mkdir -p debian-root/home/user/gcc-build/build
           sudo chroot debian-root/ ${{ matrix.arch.qemu }} /bin/sh -c 'cd /home/user/gcc-build/build && ../../gcc/configure --enable-host-shared --disable-bootstrap --enable-languages=c,jit,lto --enable-checking=yes --prefix=/usr --disable-multilib --enable-multiarch'
-          sudo chroot debian-root/ ${{ matrix.arch.qemu }} /bin/sh -c 'cd /home/user/gcc-build/build && make -j4'
+          sudo chroot debian-root/ ${{ matrix.arch.qemu }} /bin/sh -c 'cd /home/user/gcc-build/build && make -j8'
           sudo chroot debian-root/ ${{ matrix.arch.qemu }} /bin/sh -c 'cd /home/user/gcc-build/build && make install DESTDIR=$(pwd)/../install'
 
           cp debian-root/home/user/gcc-build/install/usr/lib/libgccjit.so.0.0.1 /home/runner/libgccjit.so
